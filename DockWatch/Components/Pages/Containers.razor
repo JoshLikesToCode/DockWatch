@@ -1,0 +1,159 @@
+@page "/containers"
+@using DockWatch.Model
+@using DockWatch.Services
+@inject DockerService Docker
+
+<PageTitle>DockWatch</PageTitle>
+
+<h3 class="mb-3">DockWatch — Containers</h3>
+
+<div class="mb-2">
+    <button class="btn btn-primary" @onclick="Refresh" disabled="@_loading">
+        @(_loading ? "Refreshing..." : "Refresh")
+    </button>
+</div>
+
+@if (_loading)
+{
+    <p>Loading containers…</p>
+}
+else if (_containers?.Count == 0)
+{
+    <div class="alert alert-info">No containers found.</div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-warning" : "alert-success")">@_message</div>
+    }
+
+    <table class="table table-sm table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Image</th>
+                <th>State</th>
+                <th>Status</th>
+                <th>Ports</th>
+                <th style="width: 220px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var c in _containers!)
+        {
+            <tr>
+                <td>@c.Name<br /><small class="text-muted">@c.Id[..12]</small></td>
+                <td>@c.Image</td>
+                <td>
+                    <span class="badge @(c.State == "running" ? "bg-success" : "bg-secondary")">
+                        @c.State
+                    </span>
+                </td>
+                <td>@c.Status</td>
+                <td><small>@c.Ports</small></td>
+                <td>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-success btn-sm"
+                                @onclick="async () => await Start(c.Id)" disabled="@(_busyId == c.Id)">
+                            Start
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
+                                  style="display:@(_busyId == c.Id ? "inline-block" : "none")"></span>
+                        </button>
+
+                        <button class="btn btn-outline-warning btn-sm"
+                                @onclick="async () => await Stop(c.Id)" disabled="@(_busyId == c.Id)">
+                            Stop
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
+                                  style="display:@(_busyId == c.Id ? "inline-block" : "none")"></span>
+                        </button>
+
+                        <button class="btn btn-outline-info btn-sm"
+                                @onclick="async () => await Restart(c.Id)" disabled="@(_busyId == c.Id)">
+                            Restart
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
+                                  style="display:@(_busyId == c.Id ? "inline-block" : "none")"></span>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<ContainerSummaryView>? _containers;
+    private bool _loading = true;
+    private string? _busyId;
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _message = null; _isError = false;
+        try
+        {
+            _containers = (await Docker.ListAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _message = Explain(ex);
+            _isError = true;
+            _containers = new();
+        }
+        finally { _loading = false; }
+    }
+
+    private Task Refresh() => Load();
+
+    private async Task Start(string id)
+    {
+        await DoAction(id, () => Docker.StartAsync(id), "started");
+    }
+
+    private async Task Stop(string id)
+    {
+        await DoAction(id, () => Docker.StopAsync(id), "stopped");
+    }
+
+    private async Task Restart(string id)
+    {
+        await DoAction(id, () => Docker.RestartAsync(id), "restarted");
+    }
+
+    private async Task DoAction(string id, Func<Task<bool>> action, string verb)
+    {
+        _busyId = id; _message = null; _isError = false;
+        try
+        {
+            var ok = await action();
+            if (!ok) { _message = $"Container {Short(id)} not {verb} (Docker returned false)."; _isError = true; }
+        }
+        catch (Exception ex)
+        {
+            _message = Explain(ex);
+            _isError = true;
+        }
+        finally
+        {
+            _busyId = null;
+            await Load();
+            StateHasChanged();
+        }
+    }
+
+    private static string Short(string id) => id?.Length > 12 ? id[..12] : id ?? "";
+    private static string Explain(Exception ex)
+    {
+        var msg = ex.Message;
+        if (msg.Contains("permission denied", StringComparison.OrdinalIgnoreCase))
+            return "Permission denied talking to Docker. Ensure you’re in the 'docker' group (then restart Rider) or set DOCKER_HOST for rootless Docker.";
+        if (msg.Contains("is already running", StringComparison.OrdinalIgnoreCase) || msg.Contains("409", StringComparison.OrdinalIgnoreCase))
+            return "Container is already running.";
+        return msg.Contains("304", StringComparison.OrdinalIgnoreCase) ? "No state change (Docker 304)." : $"Docker error: {msg}";
+    }
+}
