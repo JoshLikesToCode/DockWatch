@@ -1,8 +1,8 @@
 @page "/containers"
+@rendermode InteractiveServer
 @using DockWatch.Model
 @using DockWatch.Services
 @inject DockerService Docker
-
 <PageTitle>DockWatch</PageTitle>
 
 <h3 class="mb-3">DockWatch — Containers</h3>
@@ -55,21 +55,24 @@ else
                 <td>
                     <div class="btn-group">
                         <button class="btn btn-outline-success btn-sm"
-                                @onclick="async () => await Start(c.Id)" disabled="@(_busyId == c.Id)">
+                                @onclick="async () => await Start(c.Id)"
+                                disabled="@(_busyId == c.Id || IsSelf(c.Id))">
                             Start
                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
                                   style="display:@(_busyId == c.Id ? "inline-block" : "none")"></span>
                         </button>
 
                         <button class="btn btn-outline-warning btn-sm"
-                                @onclick="async () => await Stop(c.Id)" disabled="@(_busyId == c.Id)">
+                                @onclick="async () => await Stop(c.Id)"
+                                disabled="@(_busyId == c.Id || IsSelf(c.Id))">
                             Stop
                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
                                   style="display:@(_busyId == c.Id ? "inline-block" : "none")"></span>
                         </button>
 
                         <button class="btn btn-outline-info btn-sm"
-                                @onclick="async () => await Restart(c.Id)" disabled="@(_busyId == c.Id)">
+                                @onclick="async () => await Restart(c.Id)"
+                                disabled="@(_busyId == c.Id || IsSelf(c.Id))">
                             Restart
                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"
                                   style="display:@(_busyId == c.Id ? "inline-block" : "none")"></span>
@@ -88,8 +91,16 @@ else
     private string? _busyId;
     private string? _message;
     private bool _isError;
+    private string? _selfId;
 
-    protected override async Task OnInitializedAsync() => await Load();
+    protected override async Task OnInitializedAsync()
+    {
+        _selfId = await Docker.GetSelfContainerIdAsync();
+        await Load();
+    }
+    
+    private bool IsSelf(string id)
+        => _selfId != null && (id.StartsWith(_selfId, StringComparison.OrdinalIgnoreCase) || id == _selfId);
 
     private async Task Load()
     {

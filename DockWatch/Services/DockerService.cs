@@ -24,6 +24,21 @@ public class DockerService
                 c.Ports?.Select(p => $"{p.PublicPort}->{p.PrivatePort}/{p.Type}") ?? Array.Empty<string>())
         }).ToList();
     }
+    
+    public async Task<string?> GetSelfContainerIdAsync()
+    {
+        try
+        {
+            var host = Environment.MachineName; // same as /etc/hostname; typically first 12 chars of container ID
+            var all = await _client.Containers.ListContainersAsync(new Docker.DotNet.Models.ContainersListParameters { All = true });
+            var match = all.FirstOrDefault(c =>
+                c.ID.StartsWith(host, StringComparison.OrdinalIgnoreCase) ||
+                (c.Names != null && c.Names.Any(n => n.TrimStart('/') == host))
+            );
+            return match?.ID;
+        }
+        catch { return null; }
+    }
 
     public Task<bool> StartAsync(string id, CancellationToken ct = default) =>
         _client.Containers.StartContainerAsync(

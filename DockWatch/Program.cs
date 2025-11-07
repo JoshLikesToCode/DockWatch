@@ -36,4 +36,6 @@ app.UseAntiforgery();
 app.MapRazorComponents<DockWatch.Components.App>()
     .AddInteractiveServerRenderMode();
 
+app.MapGet("/", () => Results.Redirect("/containers"));
+
 app.Run();
